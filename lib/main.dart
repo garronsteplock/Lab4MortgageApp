@@ -1,8 +1,15 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  runApp(const MortgageApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (context) => Mortgage()..loadMortgage(),
+      child: const MortgageApp(),
+    ),
+  );
 }
 
 class MortgageApp extends StatelessWidget {
@@ -17,15 +24,15 @@ class MortgageApp extends StatelessWidget {
   }
 }
 
-class Mortgage {
+class Mortgage extends ChangeNotifier {
   double amount;
   int years;
   double rate;
 
   Mortgage({
-    this.amount = 0.0,
-    this.years = 10,
-    this.rate = 0.02,
+    this.amount = 100000.0,
+    this.years = 30,
+    this.rate = 0.035,
   });
 
   double monthlyPayment() {
@@ -39,6 +46,37 @@ class Mortgage {
   double totalPayment() {
     return monthlyPayment() * years * 12;
   }
+
+  Future<void> updateMortgage({
+    required double newAmount,
+    required int newYears,
+    required double newRate,
+  }) async {
+    amount = newAmount;
+    years = newYears;
+    rate = newRate;
+
+    notifyListeners();
+    await saveMortgage();
+  }
+
+  Future<void> saveMortgage() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    await prefs.setDouble('amount', amount);
+    await prefs.setInt('years', years);
+    await prefs.setDouble('rate', rate);
+  }
+
+  Future<void> loadMortgage() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    amount = prefs.getDouble('amount') ?? 100000.0;
+    years = prefs.getInt('years') ?? 30;
+    rate = prefs.getDouble('rate') ?? 0.035;
+
+    notifyListeners();
+  }
 }
 
 class MortgageScreen extends StatefulWidget {
@@ -49,7 +87,6 @@ class MortgageScreen extends StatefulWidget {
 }
 
 class MortgageScreenState extends State<MortgageScreen> {
-  Mortgage mortgage = Mortgage();
   bool termsChecked = false;
 
   String money(double value) {
@@ -74,20 +111,14 @@ class MortgageScreenState extends State<MortgageScreen> {
     );
   }
 
-  void modify() async {
-    final updatedMortgage = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ModifyMortgageScreen(mortgage: mortgage),
-      ),
-    );
-
-    if (updatedMortgage != null) {
-      setState(() {
-        mortgage = updatedMortgage;
-      });
-    }
-  }
+  void modify() {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) => const ModifyMortgageScreen(),
+    ),
+  );
+}
 
   Widget row(String label, String value) {
     return Padding(
@@ -103,6 +134,7 @@ class MortgageScreenState extends State<MortgageScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final mortgage = Provider.of<Mortgage>(context);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Mortgage Calculator'),
@@ -149,12 +181,11 @@ class MortgageScreenState extends State<MortgageScreen> {
 }
 
 class ModifyMortgageScreen extends StatefulWidget {
-  final Mortgage mortgage;
-
-  const ModifyMortgageScreen({super.key, required this.mortgage});
+  const ModifyMortgageScreen({super.key});
 
   @override
-  State<ModifyMortgageScreen> createState() => _ModifyMortgageScreenState();
+  State<ModifyMortgageScreen> createState() =>
+      _ModifyMortgageScreenState();
 }
 
 class _ModifyMortgageScreenState extends State<ModifyMortgageScreen> {
@@ -165,11 +196,16 @@ class _ModifyMortgageScreenState extends State<ModifyMortgageScreen> {
   @override
   void initState() {
     super.initState();
+
+    final mortgage =
+        Provider.of<Mortgage>(context, listen: false);
+
     amountController = TextEditingController(
-      text: widget.mortgage.amount.toStringAsFixed(2),
+      text: mortgage.amount.toStringAsFixed(2),
     );
-    selectedYears = widget.mortgage.years;
-    selectedRate = widget.mortgage.rate;
+
+    selectedYears = mortgage.years;
+    selectedRate = mortgage.rate;
   }
 
   List<double> rateList() {
@@ -180,16 +216,23 @@ class _ModifyMortgageScreenState extends State<ModifyMortgageScreen> {
     return rates;
   }
 
-  void _done() {
+  void _done() async {
     double amount = double.tryParse(amountController.text) ?? 100000.0;
 
-    Mortgage updatedMortgage = Mortgage(
-      amount: amount,
-      years: selectedYears,
-      rate: selectedRate,
+    final mortgage = Provider.of<Mortgage>(
+      context,
+      listen: false,
     );
 
-    Navigator.pop(context, updatedMortgage);
+    await mortgage.updateMortgage(
+      newAmount: amount,
+      newYears: selectedYears,
+      newRate: selectedRate,
+    );
+
+    if (!mounted) return;
+
+    Navigator.pop(context);
   }
 
   Widget yearRadio(int year) {
